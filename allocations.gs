@@ -1,0 +1,360 @@
+var availabilitySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Poll');
+var musiciansSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Musicians');
+
+function onOpen() {
+  refreshMenu()
+}
+
+function refreshMenu(){
+  var ui = SpreadsheetApp.getUi();
+  var allocationsMenu = ui.createMenu('Allocate...');
+  var doodleData = availabilitySheet.getDataRange().getValues();
+  var isUnallocatedCeilidhs = false;
+  for (var i=1; i<doodleData[4].length; i++){
+    if (/^\d+:\d+:\d+$/.test(doodleData[doodleData.length-1][i])){// only include non-allocated ceilidhs
+      allocationsMenu.addItem(getCeilidhName(i), "allocateCeilidh"+i)
+      isUnallocatedCeilidhs = true;
+    }
+  }
+  if (isUnallocatedCeilidhs){
+    allocationsMenu.addSeparator()
+                   .addItem("All", "allocateAll")
+  } else {
+    allocationsMenu.addItem("All ceilidhs allocated!", "refreshMenu")
+  }
+  ui.createMenu('Allocations')
+      .addSubMenu(allocationsMenu)
+      .addSeparator()
+      .addItem('Refresh', 'refreshMenu')
+      .addToUi();
+}
+
+for (var i=1; i<availabilitySheet.getDataRange().getValues()[4].length; i++){
+  eval("function allocateCeilidh"+i+"(){return allocateCeilidh("+i+")}");
+}
+
+function allocateAll(){
+  var doodleData = availabilitySheet.getDataRange().getValues();
+  var musicians = getMusicians();
+  if (musicians===undefined){
+    return;
+  }
+  for (var i=1; i<doodleData[4].length; i++){
+    if (/^\d+:\d+:\d+$/.test(doodleData[doodleData.length-1][i])){// only allocate non-allocated ceilidhs
+      var cancelled = ! allocateCeilidh(i, true, musicians);
+      if (cancelled){
+        refreshMenu();
+        return;
+      }
+    }
+  }
+  refreshMenu();
+}
+
+function allocateCeilidh(col, noUIRefresh, musicians) {
+  if (musicians===undefined){
+    var musicians = getMusicians(); // if not passed the musicians, get the musicians
+  }
+  if (musicians===undefined){
+    return; // if there's an error in the musician database, don't allocate
+  }
+  var doodleData = availabilitySheet.getDataRange().getValues();
+  var available = [];
+  var ifNeedBe = [];
+  for (var i=6; i<doodleData.length-1; i++){
+    var musician = musicians[i];
+    if (doodleData[i][col]=="OK"){
+      musician.isIfNeedBe=false;
+      available.push(musician);
+    } else if (doodleData[i][col]=="(OK)"){
+      musician.isIfNeedBe=true;
+      available.push(musician);
+    }
+  }
+  
+  var numMusicians = doodleData[5][col].indexOf('(4)')>=0 ? 4 : 3;
+  
+  var bands = getBestBands(available, numMusicians)
+  var ui = SpreadsheetApp.getUi();
+  var tryAgain=ui.Button.YES;
+  while (tryAgain==ui.Button.YES){
+    for (var i=0; i<bands.length; i++){
+      
+      var result = ui.alert(makeAllocationString(col, bands[i]), 'Accept allocation?', ui.ButtonSet.YES_NO_CANCEL);
+      if (result == ui.Button.YES) {
+        assignAllocation(col, bands[i]);
+        if (noUIRefresh!==true){
+          refreshMenu();
+        }
+        return true;
+      } else if (result == ui.Button.CANCEL){
+        return false;
+      }
+    }
+    tryAgain = ui.alert("No more possible bands for "+getCeilidhName(col)+".  Try again?", ui.ButtonSet.YES_NO_CANCEL);
+    if (tryAgain==ui.Button.CANCEL){
+      return false;
+    }
+  }
+  return true;
+}
+
+function getMusicians(){
+  var doodleData = availabilitySheet.getDataRange().getValues();
+  var musiciansData = musiciansSheet.getDataRange().getValues();
+  var ui = SpreadsheetApp.getUi();
+  var musicianIndices = {};
+  var musicians = {};
+  for (var i=6; i<doodleData.length-1; i++){
+    var name = doodleData[i][0];
+    if (name.indexOf('(')>0){
+      name = name.slice(0, name.indexOf('(')-1);
+    }
+    musicianIndices[name] = i;
+  }
+  for (var i=1; i<musiciansData.length; i++){
+    var musician = {"name": musiciansData[i][0],
+                    "melody1": musiciansData[i][2]=='Y',
+                    "melody2": musiciansData[i][3]=='Y',
+                    "calling": musiciansData[i][4]=='Y',
+                    "chord": musiciansData[i][5]=='Y',
+                    "chordAndMelody": musiciansData[i][6]=='Y',
+                    "percussion": musiciansData[i][7]=='Y',
+                    "paid": musiciansData[i][8],
+                    "charity": musiciansData[i][9],
+                    "total": musiciansData[i][10],
+                    "doodleIndex": musicianIndices[musiciansData[i][0]],
+                    "musicianDataIndex": i
+                   };
+    
+    if (musician.doodleIndex===undefined){
+      if (ui.alert(musician.name+' not on Doodle poll.  Continue? ', ui.ButtonSet.YES_NO)==ui.Button.NO){
+        return undefined;
+      }
+    } else {
+      musicians[musicianIndices[musician.name]] = musician;
+      delete musicianIndices[musician.name];
+    }
+  }
+  for (var name in musicianIndices){
+    if (ui.alert(name+' on Doodle poll but not musician info sheet.  Continue? ', ui.ButtonSet.YES_NO)==ui.Button.NO){
+      return undefined;
+    } else {
+      var musician = {"name": name,
+                      "melody1": false,
+                      "melody2": false,
+                      "calling": false,
+                      "chord": false,
+                      "chordAndMelody": false,
+                      "percussion": false,
+                      "paid": 100000,
+                      "charity": 10000,
+                      "total": 90000,
+                      "doodleIndex": musicianIndices[name],
+                      "musicianDataIndex": -1
+                     };
+      musicians[musicianIndices[musician.name]] = musician;
+    }
+  }
+  return musicians;
+}
+
+function getCeilidhName(col){
+  var monthCell = availabilitySheet.getRange(4,col+1);
+  var month = (monthCell.isPartOfMerge() ? monthCell.getMergedRanges()[0].getCell(1, 1) : monthCell).getValue();
+  month = month.slice(0, month.indexOf(' '));
+  var availabilityData = availabilitySheet.getDataRange().getValues();
+  var name = availabilityData[5][col];
+  if (name.indexOf('(')>0){
+    name = name.slice(0, name.indexOf('(')-1);
+  }
+  return availabilityData[4][col] + " " + month + " (" + name + ")";
+}
+
+
+function assignAllocation(col, band){
+  for (var i=7; i<availabilitySheet.getDataRange().getValues().length; i++){
+    availabilitySheet.getRange(i,col+1).setValue("");
+  }
+  for (var i=0; i<band.Melody.length; i++){
+    var player = band.Melody[i];
+    availabilitySheet.getRange(player.doodleIndex+1,col+1).setValue("Melody");
+    musiciansSheet.getRange(player.musicianDataIndex+1, 9).setValue(player.paid+1);
+    player.paid+=1;
+    player.total+=1;
+  }
+  for (var part in band){
+    if (part!="Melody"){
+      var player = band[part];
+      availabilitySheet.getRange(player.doodleIndex+1,col+1).setValue(part);
+      musiciansSheet.getRange(player.musicianDataIndex+1, 9).setValue(player.paid+1);
+      player.paid+=1;
+      player.total+=1;
+    }
+  }
+  var allocationString = makeAllocationString(col, band);
+  availabilitySheet.getRange(availabilitySheet.getDataRange().getValues().length, col+1).setValue(allocationString);
+}
+
+function makeAllocationString(col,band){
+  var ceilidhName = getCeilidhName(col);
+  var melodyPlayers = band.Melody.map(function(x){return x.name}).join(', ');
+  var otherPlayers = "";
+  for (var part in band){
+    if (part!="Melody"){
+      otherPlayers+=part + " - " + band[part].name + '; '
+    }
+  }
+  return ceilidhName + ": Melody - " + melodyPlayers + '; ' + otherPlayers;
+}
+
+function getBestBands(available, numMusicians, maxNumberOfPossibileBandsReturned){
+  var availableGroups = getSubsets(available, numMusicians);
+  //TODO: charity gigs
+  availableGroups.sort(function(groupA, groupB){
+    // prioritise first groups with less ifNeedBe members, then groups who between them have played the least gigs
+    return groupA.map(function(x){return x.total + (x.isIfNeedBe ? 1000 : 0)}).reduce(function(a,b){return a+b}) - groupB.map(function(x){return x.total + (x.isIfNeedBe ? 1000 : 0)}).reduce(function(a,b){return a+b})
+  });
+  var possibleBands = [];
+  for (var i=0; i<availableGroups.length; i++){
+    var band = getValidBand(availableGroups[i])
+    if (band!==undefined){
+      possibleBands.push(band);
+      if (maxNumberOfPossibileBandsReturned && possibleBands.length >= maxNumberOfPossibleBandsReturned){
+        return possibleBands;
+      }
+    }
+  }
+  return possibleBands;
+}
+
+function getValidBand(band){
+  // every band needs a caller
+  if (band.find(function(x){return x.calling})===undefined){
+    return undefined;
+  }
+  if (band.length==3){
+    //must be one melody I, one melody II or chord+melody, and one chord; or one melody I, one chords+melody, one percussion
+    var possibleBands = shuffle(permutator(band));
+    for (var i=0; i<6; i++){
+      var thisBand = possibleBands[i];
+      if (thisBand[0].melody1 && (thisBand[1].melody2 || thisBand[1].chordAndMelody) && thisBand[2].chord){
+        return {'Melody': [thisBand[0], thisBand[1]], 'Chords': thisBand[2]}
+      }
+      if (thisBand[0].melody1 && thisBand[1].chordAndMelody && thisBand[2].percussion){
+        return {'Melody': [thisBand[0]], 'Melody + Chords': thisBand[1], 'Percussion': thisBand[2]}
+      }
+    }
+    return undefined;
+  } else if (band.length==4){
+    //must be one melody I, two melody II or chord+melody, and one chord; or one melody I, one melody II or chords+melody, one chord, and one percussion
+    var possibleBands = permutator(band);
+    for (var i=0; i<24; i++){
+      var thisBand = possibleBands[i];
+      if (thisBand[0].melody1 && (thisBand[1].melody2 || thisBand[1].chordAndMelody) && (thisBand[2].melody2 || thisBand[2].chordAndMelody) && thisBand[3].chord){
+        return {'Melody': [thisBand[0], thisBand[1], thisBand[2]], 'Chords': thisBand[3]}
+      }
+      if (thisBand[0].melody1 && (thisBand[1].melody2 || thisBand[1].chordAndMelody) && thisBand[2].chord && thisBand[3].percussion){
+        return {'Melody': [thisBand[0], thisBand[1]], 'Chords': thisBand[2], 'Percussion': thisBand[3]}
+      }
+    }
+    return undefined;
+  }
+  return undefined;
+}
+
+function getSubsets(superset, n){
+  result = []
+  _getSubsets(superset, n, 0, [], 0, result);
+  return result;
+}
+
+function _getSubsets(superset, n, previous, indices, nestingLevel, result){
+  if (nestingLevel<n){
+    for (var i=previous; i<superset.length; i++){
+      _getSubsets(superset, n, i+1, indices.concat([i]), nestingLevel+1, result);
+    }
+  } else {
+    var toReturn = []
+    for (var i=0; i<n; i++){
+      toReturn.push(superset[indices[i]])
+    }
+    result.push(toReturn);
+  }
+}
+
+function permutator(inputArr) {
+  var results = [];
+
+  function permute(arr, memo) {
+    var cur, memo = memo || [];
+
+    for (var i = 0; i < arr.length; i++) {
+      cur = arr.splice(i, 1);
+      if (arr.length === 0) {
+        results.push(memo.concat(cur));
+      }
+      permute(arr.slice(), memo.concat(cur));
+      arr.splice(i, 0, cur[0]);
+    }
+
+    return results;
+  }
+
+  return permute(inputArr);
+}
+
+function shuffle(a) {
+    var j, x, i;
+    for (i = a.length - 1; i > 0; i--) {
+        j = Math.floor(Math.random() * (i + 1));
+        x = a[i];
+        a[i] = a[j];
+        a[j] = x;
+    }
+    return a;
+}
+
+/*
+Allocations!
+
+Sat 8 September (Becky and Jimmy Ceilidh): Melody - Paul, Eleanor; Chords - Ralph
+Wed 12 September (New Scotland ceilidh (CHARITY)): Melody - Ralph, Bethany; Chords - Paul
+Sat 15 September (Medics event): Melody - Paul, Bethany; Chords - Eleanor; Percussion - Joan
+
+*/
+
+
+  /*
+  Beautiful code which doesn't work cos callers
+  available.sort(function(a,b){
+    return a.total - b.total
+  });
+  
+  var melody1 = available.filter(function(x){ return x.melody1 });
+  var melody2 = available.filter(function(x){ return x.melody2 });
+  var chord = available.filter(function(x){ return x.chord });
+  var lists = [{"part":"Melody 1", "queue": melody1}, {"part": "Melody 2", "queue": melody2}, {"part": "Chord", "queue": chord}];
+  var band = {}
+  
+  while (lists.length>0){
+    if (lists.map(function(x){return x.queue.length==0}).reduce(function(x,y){return x || y })){
+      throw "Impossible to allocate ceilidh: not enough correct musicians available";
+    }
+    var minValue = Math.min.apply(Math, lists.map(function(x){return x.queue[0].total}))
+    var listsWithMin = lists.filter(function(x){return x.queue[0].total==minValue})
+    var i=1
+    while (listsWithMin.length > 1){
+      var maxValue = Math.max.apply(Math, listsWithMin.map(function(x){return x.queue.length >= i ? Number.MIN_VALUE : x.queue[i].total}))
+      if (maxValue == Number.MIN_VALUE){// if it's a tie, pick arbitrarily 
+        break;
+      }
+      listsWithMin = listsWithMin.filter(function(x){return x.queue[i].total==maxValue});
+      i++;
+    }
+    band[listsWithMin[0].part] = listsWithMin[0].queue[0];
+    lists.splice(lists.indexOf(listsWithMin[0]),1);
+    lists = lists.map(function(x){x.queue = x.queue.filter(function(y){return y!=listsWithMin[0].queue[0]}); return x;});
+  }
+  Logger.log(band);
+  */
