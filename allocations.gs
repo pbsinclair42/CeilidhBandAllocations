@@ -164,22 +164,9 @@ function assignAllocation(col, band, isCharity){
   for (var i=7; i<availabilitySheet.getDataRange().getValues().length; i++){
     availabilitySheet.getRange(i,col+1).setValue("");
   }
-  for (var i=0; i<band.Melody.length; i++){
-    var player = band.Melody[i];
-    availabilitySheet.getRange(player.doodleIndex+1,col+1).setValue("Melody");
-    if (isCharity){
-      musiciansSheet.getRange(player.musicianDataIndex+1, 10).setValue(player.charity+1);
-      player.charity+=1;
-      player.total-=1;
-    }else{
-      musiciansSheet.getRange(player.musicianDataIndex+1, 9).setValue(player.paid+1);
-      player.paid+=1;
-      player.total+=1;
-    }
-  }
   for (var part in band){
-    if (part!="Melody"){
-      var player = band[part];
+    for (var i=0; i<band[part].length; i++){
+      var player = band[part][i];
       availabilitySheet.getRange(player.doodleIndex+1,col+1).setValue(part);
       if (isCharity){
         musiciansSheet.getRange(player.musicianDataIndex+1, 10).setValue(player.charity+1);
@@ -192,20 +179,18 @@ function assignAllocation(col, band, isCharity){
       }
     }
   }
+  
   var allocationString = makeAllocationString(col, band);
   availabilitySheet.getRange(availabilitySheet.getDataRange().getValues().length, col+1).setValue(allocationString);
 }
 
 function makeAllocationString(col,band){
   var ceilidhName = getCeilidhName(col);
-  var melodyPlayers = band.Melody.map(function(x){return x.name}).join(', ');
-  var otherPlayers = "";
+  var players = "";
   for (var part in band){
-    if (part!="Melody"){
-      otherPlayers+=part + " - " + band[part].name + '; '
-    }
+    players+=part + " - " + band[part].map(function(x){return x.name}).join(', ') + '; ';
   }
-  return ceilidhName + ": Melody - " + melodyPlayers + '; ' + otherPlayers;
+  return ceilidhName + ": " + players;
 }
 
 function getCeilidhName(col){
@@ -260,10 +245,10 @@ function getValidBand(band){
     for (var i=0; i<6; i++){
       var thisBand = possibleBands[i];
       if (thisBand[0].melody1 && (thisBand[1].melody2 || thisBand[1].chordAndMelody) && thisBand[2].chord){
-        return {'Melody': [thisBand[0], thisBand[1]], 'Chords': thisBand[2]}
+        return {'Melody': [thisBand[0], thisBand[1]], 'Chords': [thisBand[2]]}
       }
       if (thisBand[0].melody1 && thisBand[1].chordAndMelody && thisBand[2].percussion){
-        return {'Melody': [thisBand[0]], 'Melody + Chords': thisBand[1], 'Percussion': thisBand[2]}
+        return {'Melody': [thisBand[0]], 'Melody + Chords': [thisBand[1]], 'Percussion': [thisBand[2]]}
       }
     }
   } else if (band.length==4){
@@ -272,10 +257,10 @@ function getValidBand(band){
     for (var i=0; i<24; i++){
       var thisBand = possibleBands[i];
       if (thisBand[0].melody1 && (thisBand[1].melody2 || thisBand[1].chordAndMelody) && (thisBand[2].melody2 || thisBand[2].chordAndMelody) && thisBand[3].chord){
-        return {'Melody': [thisBand[0], thisBand[1], thisBand[2]], 'Chords': thisBand[3]}
+        return {'Melody': [thisBand[0], thisBand[1], thisBand[2]], 'Chords': [thisBand[3]]}
       }
       if (thisBand[0].melody1 && (thisBand[1].melody2 || thisBand[1].chordAndMelody) && thisBand[2].chord && thisBand[3].percussion){
-        return {'Melody': [thisBand[0], thisBand[1]], 'Chords': thisBand[2], 'Percussion': thisBand[3]}
+        return {'Melody': [thisBand[0], thisBand[1]], 'Chords': [thisBand[2]], 'Percussion': [thisBand[3]]}
       }
     }
   }
