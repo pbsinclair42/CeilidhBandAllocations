@@ -33,7 +33,7 @@ for (var i=1; i<availabilitySheet.getDataRange().getValues()[4].length; i++){
   eval("function allocateCeilidh"+i+"(){return allocateCeilidh("+i+")}");
 }
 
-function getMusicians(){
+function getMusicians(isCharity, silent){
   var doodleData = availabilitySheet.getDataRange().getValues();
   var musiciansData = musiciansSheet.getDataRange().getValues();
   var ui = SpreadsheetApp.getUi();
@@ -48,12 +48,12 @@ function getMusicians(){
   }
   for (var i=1; i<musiciansData.length; i++){
     var musician = {"name": musiciansData[i][0],
-                    "melody1": musiciansData[i][2]=='Y',
-                    "melody2": musiciansData[i][3]=='Y',
-                    "calling": musiciansData[i][4]=='Y',
-                    "chord": musiciansData[i][5]=='Y',
-                    "chordAndMelody": musiciansData[i][6]=='Y',
-                    "percussion": musiciansData[i][7]=='Y',
+                    "melody1": musiciansData[i][2]=='Y' || (isCharity && musiciansData[i][2]=='C'),
+                    "melody2": musiciansData[i][3]=='Y' || (isCharity && musiciansData[i][3]=='C'),
+                    "calling": musiciansData[i][4]=='Y' || (isCharity && musiciansData[i][4]=='C'),
+                    "chord": musiciansData[i][5]=='Y' || (isCharity && musiciansData[i][5]=='C'),
+                    "chordAndMelody": musiciansData[i][6]=='Y' || (isCharity && musiciansData[i][6]=='C'),
+                    "percussion": musiciansData[i][7]=='Y' || (isCharity && musiciansData[i][7]=='C'),
                     "paid": musiciansData[i][8],
                     "charity": musiciansData[i][9],
                     "total": musiciansData[i][10],
@@ -61,7 +61,7 @@ function getMusicians(){
                     "musicianDataIndex": i
                    };
     
-    if (musician.doodleIndex===undefined){
+    if (!silent && musician.doodleIndex===undefined){
       if (ui.alert(musician.name+' not on Doodle poll.  Continue? ', ui.ButtonSet.YES_NO)==ui.Button.NO){
         return undefined;
       }
@@ -71,7 +71,7 @@ function getMusicians(){
     }
   }
   for (var name in musicianIndices){
-    if (ui.alert(name+' on Doodle poll but not musician info sheet.  Continue? ', ui.ButtonSet.YES_NO)==ui.Button.NO){
+    if (!silent && ui.alert(name+' on Doodle poll but not musician info sheet.  Continue? ', ui.ButtonSet.YES_NO)==ui.Button.NO){
       return undefined;
     } else {
       var musician = {"name": name,
@@ -95,13 +95,13 @@ function getMusicians(){
 
 function allocateAll(){
   var doodleData = availabilitySheet.getDataRange().getValues();
-  var musicians = getMusicians();
+  var musicians = getMusicians(); //check that the musicians database is correct
   if (musicians===undefined){
     return;
   }
   for (var i=1; i<doodleData[4].length; i++){
     if (/^\d+:\d+:\d+$/.test(doodleData[doodleData.length-1][i])){// only allocate non-allocated ceilidhs
-      var cancelled = ! allocateCeilidh(i, true, musicians);
+      var cancelled = ! allocateCeilidh(i, true);
       if (cancelled){
         refreshMenu();
         return;
@@ -111,14 +111,15 @@ function allocateAll(){
   refreshMenu();
 }
 
-function allocateCeilidh(col, noUIRefresh, musicians) {
-  if (musicians===undefined){
-    var musicians = getMusicians(); // if not passed the musicians, get the musicians
-  }
+function allocateCeilidh(col, noUI) {
+  var doodleData = availabilitySheet.getDataRange().getValues();
+  var numMusicians = doodleData[5][col].indexOf('(4)')>=0 ? 4 : 3;
+  var isCharity = doodleData[5][col].indexOf('(c)')>=0;
+  
+  var musicians = getMusicians(isCharity, noUI);
   if (musicians===undefined){
     return; // if there's an error in the musician database, don't allocate
   }
-  var doodleData = availabilitySheet.getDataRange().getValues();
   var available = [];
   var ifNeedBe = [];
   for (var i=6; i<doodleData.length-1; i++){
@@ -132,9 +133,6 @@ function allocateCeilidh(col, noUIRefresh, musicians) {
     }
   }
   
-  var numMusicians = doodleData[5][col].indexOf('(4)')>=0 ? 4 : 3;
-  var isCharity = doodleData[5][col].indexOf('(c)')>=0;
-  
   var bands = getBestBands(available, numMusicians, isCharity)
   var ui = SpreadsheetApp.getUi();
   var tryAgain=ui.Button.YES;
@@ -144,7 +142,7 @@ function allocateCeilidh(col, noUIRefresh, musicians) {
       var result = ui.alert(makeAllocationString(col, bands[i]), 'Accept allocation?', ui.ButtonSet.YES_NO_CANCEL);
       if (result == ui.Button.YES) {
         assignAllocation(col, bands[i], isCharity);
-        if (noUIRefresh!==true){
+        if (noUI!==true){
           refreshMenu();
         }
         return true;
