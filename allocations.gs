@@ -5,6 +5,14 @@ function onOpen() {
   refreshMenu()
 }
 
+function onChange(e) {
+  // refresh the menu on sheet rename or load
+  Logger.log(e)
+  if (e.changeType == 'OTHER' || e.changeType == 'INSERT_GRID') {
+    refreshMenu();
+  }
+}
+
 function refreshMenu(){
   var ui = SpreadsheetApp.getUi();
   var allocationsMenu = ui.createMenu('Allocate...');
