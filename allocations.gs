@@ -1,13 +1,15 @@
-var availabilitySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Poll');
-var musiciansSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Musicians');
+// Google Sheets doesn't allow you to call functions with parameters from menu items
+// This is a horrid hack to create 100 functions named allocateCeilidhi() which just call allocateCeilidh(i)
+for (var i=1; i<100; i++){
+  eval("function allocateCeilidh"+i+"(){return allocateCeilidh("+i+")}");
+}
 
 function onOpen() {
   refreshMenu()
 }
 
 function onChange(e) {
-  // refresh the menu on sheet rename or load
-  Logger.log(e)
+  // refresh the menu on sheet insert and rename
   if (e.changeType == 'OTHER' || e.changeType == 'INSERT_GRID') {
     refreshMenu();
   }
@@ -17,9 +19,10 @@ function refreshMenu(){
   var ui = SpreadsheetApp.getUi();
   var allocationsMenu = ui.createMenu('Allocate...');
   var doodleData = availabilitySheet.getDataRange().getValues();
+  var numCeilidhs = numCeilidhsInPoll(doodleData);
   var isUnallocatedCeilidhs = false;
-  for (var i=1; i<doodleData[4].length; i++){
-    if (/^\d+:\d+:\d+$/.test(doodleData[doodleData.length-1][i])){// only include non-allocated ceilidhs
+  for (var i=1; i<numCeilidhs; i++){
+    if (isUnallocated(doodleData, i)){
       allocationsMenu.addItem(getCeilidhName(i), "allocateCeilidh"+i)
       isUnallocatedCeilidhs = true;
     }
@@ -37,8 +40,12 @@ function refreshMenu(){
       .addToUi();
 }
 
-for (var i=1; i<availabilitySheet.getDataRange().getValues()[4].length; i++){
-  eval("function allocateCeilidh"+i+"(){return allocateCeilidh("+i+")}");
+function numCeilidhsInPoll(doodleData){
+  return doodleData[dateRowIndex].length;
+}
+
+function isUnallocated(doodleData, col){
+  return /^\d+:\d+:\d+$/.test(doodleData[doodleData.length-1][col])
 }
 
 function getMusicians(isCharity, silent){
@@ -47,27 +54,37 @@ function getMusicians(isCharity, silent){
   var ui = SpreadsheetApp.getUi();
   var musicianIndices = {};
   var musicians = {};
-  for (var i=6; i<doodleData.length-1; i++){
-    var name = doodleData[i][0];
+  for (var i=firstMusicianAvailabilityRowIndex; i<doodleData.length-1; i++){
+    var name = doodleData[i][nameColIndex];
     if (name.indexOf('(')>0){
       name = name.slice(0, name.indexOf('(')-1);
+    }
+    if (musicianIndices[name]!==undefined){
+      ui.alert(name + " is on Doodle poll twice.  Delete one occurance.");
+      return undefined;
     }
     musicianIndices[name] = i;
   }
   for (var i=1; i<musiciansData.length; i++){
-    var musician = {"name": musiciansData[i][0],
-                    "melody1": musiciansData[i][2]=='Y' || (isCharity && musiciansData[i][2]=='C'),
-                    "melody2": musiciansData[i][3]=='Y' || (isCharity && musiciansData[i][3]=='C'),
-                    "calling": musiciansData[i][4]=='Y' || (isCharity && musiciansData[i][4]=='C'),
-                    "chord": musiciansData[i][5]=='Y' || (isCharity && musiciansData[i][5]=='C'),
-                    "chordAndMelody": musiciansData[i][6]=='Y' || (isCharity && musiciansData[i][6]=='C'),
-                    "percussion": musiciansData[i][7]=='Y' || (isCharity && musiciansData[i][7]=='C'),
-                    "paid": musiciansData[i][8],
-                    "charity": musiciansData[i][9],
-                    "total": musiciansData[i][10],
-                    "doodleIndex": musicianIndices[musiciansData[i][0]],
+    var musician = {"name": musiciansData[i][nameColIndex],
+                    "melody1": musiciansData[i][melody1ColIndex]=='Y' || (isCharity && musiciansData[i][melody1ColIndex]=='C'),
+                    "melody2": musiciansData[i][melody2ColIndex]=='Y' || (isCharity && musiciansData[i][melody2ColIndex]=='C'),
+                    "calling": musiciansData[i][callingColIndex]=='Y' || (isCharity && musiciansData[i][callingColIndex]=='C'),
+                    "chord": musiciansData[i][chordColIndex]=='Y' || (isCharity && musiciansData[i][chordColIndex]=='C'),
+                    "chordAndMelody": musiciansData[i][chordAndMelodyColIndex]=='Y' || (isCharity && musiciansData[i][chordAndMelodyColIndex]=='C'),
+                    "percussion": musiciansData[i][percussionColIndex]=='Y' || (isCharity && musiciansData[i][percussionColIndex]=='C'),
+                    "gradYear": musiciansData[i][gradYearColIndex],
+                    "paid": musiciansData[i][paidColIndex],
+                    "charity": musiciansData[i][charityColIndex],
+                    "total": musiciansData[i][totalColIndex],
+                    "doodleIndex": musicianIndices[musiciansData[i][nameColIndex]],
                     "musicianDataIndex": i
                    };
+
+    if (musician.total != recalculateTotal(musician)){
+      ui.alert(musician.name+' has a different total to expected.  Actual: '+musician.total+', expected: '+recalculateTotal(musician));
+      return undefined;
+    }
     
     if (!silent && musician.doodleIndex===undefined){
       if (ui.alert(musician.name+' not on Doodle poll.  Continue? ', ui.ButtonSet.YES_NO)==ui.Button.NO){
@@ -82,6 +99,8 @@ function getMusicians(isCharity, silent){
     if (!silent && ui.alert(name+' on Doodle poll but not musician info sheet.  Continue? ', ui.ButtonSet.YES_NO)==ui.Button.NO){
       return undefined;
     } else {
+      // if a musician has signed up to the Doodle but hasn't got any info, don't allocate them any gigs
+      // setting this to a dummy value to avoid null pointer fun times
       var musician = {"name": name,
                       "melody1": false,
                       "melody2": false,
@@ -107,9 +126,10 @@ function allocateAll(){
   if (musicians===undefined){
     return;
   }
-  for (var i=1; i<doodleData[4].length; i++){
-    if (/^\d+:\d+:\d+$/.test(doodleData[doodleData.length-1][i])){// only allocate non-allocated ceilidhs
-      var cancelled = ! allocateCeilidh(i, true);
+  var numCeilidhs = numCeilidhsInPoll(doodleData);
+  for (var i=1; i<numCeilidhs; i++){
+    if (isUnallocated(i)){
+      var cancelled = !allocateCeilidh(i, true);
       if (cancelled){
         refreshMenu();
         return;
@@ -121,8 +141,8 @@ function allocateAll(){
 
 function allocateCeilidh(col, noUI) {
   var doodleData = availabilitySheet.getDataRange().getValues();
-  var numMusicians = doodleData[5][col].indexOf('(4)')>=0 ? 4 : 3;
-  var isCharity = doodleData[5][col].indexOf('(c)')>=0;
+  var numMusicians = doodleData[gigNameRowIndex][col].indexOf('(4)')>=0 ? 4 : 3;
+  var isCharity = doodleData[gigNameRowIndex][col].indexOf('(c)')>=0;
   
   var musicians = getMusicians(isCharity, noUI);
   if (musicians===undefined){
@@ -130,7 +150,7 @@ function allocateCeilidh(col, noUI) {
   }
   var available = [];
   var ifNeedBe = [];
-  for (var i=6; i<doodleData.length-1; i++){
+  for (var i=firstMusicianAvailabilityRowIndex; i<doodleData.length-1; i++){
     var musician = musicians[i];
     if (doodleData[i][col]=="OK"){
       musician.isIfNeedBe=false;
@@ -146,7 +166,6 @@ function allocateCeilidh(col, noUI) {
   var tryAgain=ui.Button.YES;
   while (tryAgain==ui.Button.YES){
     for (var i=0; i<bands.length; i++){
-      
       var result = ui.alert(makeAllocationString(col, bands[i]), 'Accept allocation?', ui.ButtonSet.YES_NO_CANCEL);
       if (result == ui.Button.YES) {
         assignAllocation(col, bands[i], isCharity);
@@ -167,27 +186,45 @@ function allocateCeilidh(col, noUI) {
 }
 
 function assignAllocation(col, band, isCharity){
-  for (var i=7; i<availabilitySheet.getDataRange().getValues().length; i++){
-    availabilitySheet.getRange(i,col+1).setValue("");
-  }
+  clearAvailability(col);
   for (var part in band){
     for (var i=0; i<band[part].length; i++){
       var player = band[part][i];
       availabilitySheet.getRange(player.doodleIndex+1,col+1).setValue(part);
       if (isCharity){
-        musiciansSheet.getRange(player.musicianDataIndex+1, 10).setValue(player.charity+1);
+        musiciansSheet.getRange(player.musicianDataIndex+1, charityColIndex+1).setValue(player.charity+1);
         player.charity+=1;
-        player.total-=1;
       }else{
-        musiciansSheet.getRange(player.musicianDataIndex+1, 9).setValue(player.paid+1);
+        musiciansSheet.getRange(player.musicianDataIndex+1, paidColIndex+1).setValue(player.paid+1);
         player.paid+=1;
-        player.total+=1;
       }
+      player.total = recalculateTotal(player);
     }
   }
   
   var allocationString = makeAllocationString(col, band);
   availabilitySheet.getRange(availabilitySheet.getDataRange().getValues().length, col+1).setValue(allocationString);
+}
+
+function clearAvailability(col){
+  var size = availabilitySheet.getDataRange().getValues().length - firstMusicianAvailabilityRowIndex;
+  var blank = new Array(size);
+  for (var i=0; i<size; i++){
+    blank[i]=[""];
+  }
+  availabilitySheet.getRange(firstMusicianAvailabilityRowIndex+1,col+1,size).setValues(blank);
+}
+
+function recalculateTotal(musician){
+  if (musician.gradYear==""){
+    return musician.paid - musician.charity;
+  }
+  var gradYear = parseInt(musician.gradYear);
+  var currentYear = new Date().getFullYear();
+  if (gradYear >= currentYear){
+    return musician.paid = musician.charity;
+  }
+  return (currentYear - gradYear + 1) * musician.paid - musician.charity;
 }
 
 function makeAllocationString(col,band){
@@ -200,18 +237,18 @@ function makeAllocationString(col,band){
 }
 
 function getCeilidhName(col){
-  var monthCell = availabilitySheet.getRange(4,col+1);
+  var monthCell = availabilitySheet.getRange(monthRowIndex+1,col+1);
   var month = (monthCell.isPartOfMerge() ? monthCell.getMergedRanges()[0].getCell(1, 1) : monthCell).getValue();
   month = month.slice(0, month.indexOf(' '));
   var availabilityData = availabilitySheet.getDataRange().getValues();
-  var name = availabilityData[5][col];
+  var name = availabilityData[gigNameRowIndex][col];
   if (name.indexOf('(4)')>0){
     name = name.slice(0, name.indexOf('(')-1);
   } else if (name.indexOf('(c)')>0){
     name = name.slice(0, name.indexOf('(')-1);
     name+=" (Charity)"
   }
-  return availabilityData[4][col] + " " + month + " (" + name + ")";
+  return availabilityData[dateRowIndex][col] + " " + month + " (" + name + ")";
 }
 
 function getBestBands(available, numMusicians, isCharity, maxNumberOfPossibileBandsReturned){
