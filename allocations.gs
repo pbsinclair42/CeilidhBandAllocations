@@ -222,7 +222,7 @@ function recalculateTotal(musician){
   var gradYear = parseInt(musician.gradYear);
   var currentYear = new Date().getFullYear();
   if (gradYear >= currentYear){
-    return musician.paid = musician.charity;
+    return musician.paid - musician.charity;
   }
   return (currentYear - gradYear + 1) * musician.paid - musician.charity;
 }
