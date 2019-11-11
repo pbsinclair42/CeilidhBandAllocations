@@ -16,11 +16,12 @@ var melody2ColIndex = 3;
 var callingColIndex = 4;
 var chordColIndex = 5;
 var chordAndMelodyColIndex = 6;
-var percussionColIndex = 7;
-var gradYearColIndex = 8;
-var paidColIndex = 9;
-var charityColIndex = 10;
-var totalColIndex = 11;
+var harpColIndex = 7;
+var percussionColIndex = 8;
+var gradYearColIndex = 9;
+var paidColIndex = 10;
+var charityColIndex = 11;
+var totalColIndex = 12;
 
 // Layout of the Helpers sheet
 var newPaidGiggerStartingValueCell = "B2";

@@ -72,6 +72,7 @@ function getMusicians(isCharity, silent){
                     "calling": musiciansData[i][callingColIndex]=='Y' || (isCharity && musiciansData[i][callingColIndex]=='C'),
                     "chord": musiciansData[i][chordColIndex]=='Y' || (isCharity && musiciansData[i][chordColIndex]=='C'),
                     "chordAndMelody": musiciansData[i][chordAndMelodyColIndex]=='Y' || (isCharity && musiciansData[i][chordAndMelodyColIndex]=='C'),
+                    "harp": musiciansData[i][harpColIndex]=='Y' || (isCharity && musiciansData[i][harpColIndex]=='C'),
                     "percussion": musiciansData[i][percussionColIndex]=='Y' || (isCharity && musiciansData[i][percussionColIndex]=='C'),
                     "gradYear": musiciansData[i][gradYearColIndex],
                     "paid": musiciansData[i][paidColIndex],
@@ -81,7 +82,7 @@ function getMusicians(isCharity, silent){
                     "musicianDataIndex": i
                    };
 
-    if (musician.total != recalculateTotal(musician)){
+    if (!silent && musician.total != recalculateTotal(musician)){
       ui.alert(musician.name+' has a different total to expected.  Actual: '+musician.total+', expected: '+recalculateTotal(musician));
       return undefined;
     }
@@ -107,7 +108,9 @@ function getMusicians(isCharity, silent){
                       "calling": false,
                       "chord": false,
                       "chordAndMelody": false,
+                      "harp": false,
                       "percussion": false,
+                      "gradYear": 2000,
                       "paid": 100000,
                       "charity": 10000,
                       "total": 90000,
@@ -304,6 +307,12 @@ function getValidBand(band){
       }
       if (thisBand[0].melody1 && (thisBand[1].melody2 || thisBand[1].chordAndMelody) && thisBand[2].chord && thisBand[3].percussion){
         return {'Melody': [thisBand[0], thisBand[1]], 'Chords': [thisBand[2]], 'Percussion': [thisBand[3]]}
+      }
+      if (thisBand[0].melody1 && (thisBand[1].melody2 || thisBand[1].chordAndMelody) && thisBand[2].chord && thisBand[3].harp){
+        return {'Melody': [thisBand[0], thisBand[1]], 'Chords': [thisBand[2]], 'Harp': [thisBand[3]]}
+      }
+      if (thisBand[0].melody1 && thisBand[1].chordAndMelody && thisBand[2].percussion && thisBand[3].harp){
+        return {'Melody': [thisBand[0]], 'Melody + Chords': [thisBand[1]], 'Percussion': [thisBand[2]], 'Harp': [thisBand[3]]}
       }
     }
   }
